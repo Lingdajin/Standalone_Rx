@@ -9,7 +9,7 @@ config_dir = fileparts(mfilename('fullpath'));
 VSA_File = getenv('PDSCH_VSA_FILE');
 if isempty(VSA_File)
     VSA_File = fullfile(config_dir, 'input', ...
-        'PDSCH_TX_BW100M_SCS30kHz_SNR25_10ms_ANT2_padded_3frame.mat');
+        'PDSCH_TX_BW100M_SCS30kHz_SNR25_10ms_ANT8_padded_3frame.mat');
 end
 
 %% ---------- 系统参数 (需与发射端一致) ----------
@@ -18,13 +18,13 @@ BW      = 100e6;         % 带宽 (Hz)
 NumOfRB = 10;           % 使用的RB数
 miu     = 1;             % SCS: 0=15k,1=30k,2=60k,3=120k,4=240k,5=480k,6=960k
 CPType  = 1;             % 1=NCP, 2=ECP
-Nt      = 2;             % 发射天线数
-Nr      = 2;             % 接收天线数
+Nt      = 8;             % 发射天线数
+Nr      = 8;             % 接收天线数
 
 %% ---------- DMRS配置 (需与发射端一致) ----------
-DMRS_port           = 2;      % DMRS端口数 (1~8)
+DMRS_port           = 8;      % DMRS端口数 (1~8)
 NumOfAddDMRS        = 1;      % 附加DMRS位置 {0,1,2,3}
-DMRSLength          = 1;      % 1=单符号, 2=双符号
+DMRSLength          = 2;      % 1=单符号, 2=双符号
 DMRS_Type           = 1;      % 1=Type1(comb-2)
 DMRS_ScramblingID0  = 0;      % N_ID^0
 DMRS_ScramblingID1  = 1;      % N_ID^1
