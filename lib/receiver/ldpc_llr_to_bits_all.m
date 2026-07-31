@@ -9,7 +9,7 @@ end
 des_bits_all = [];
 crc_results = false(1, cfg.Ns);
 for stream_idx = 1:cfg.Ns
-    [stream_bits, crc_results(stream_idx), cfg] = ...
+    [stream_bits, crc_results(stream_idx), ~, cfg] = ...
         ldpc_llr_to_bits(llr_cell{stream_idx}, cfg, stream_idx);
     des_bits_all = [des_bits_all, stream_bits]; %#ok<AGROW>
 end

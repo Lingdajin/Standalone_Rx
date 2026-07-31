@@ -34,27 +34,39 @@ for stream_idx = 1:Ns
         [LDPCCodingRateMatchingParam.des_bits_all, ...
         des_bits(1:src_len(stream_idx))]; %#ok<AGROW>
 
-    if isempty(reference_bits)
-        crc_ok = LDPCCodingRateMatchingParam.last_crc_ok;
-        Statistics.NumOfErrorBit_s(stream_idx) = ...
-            (~crc_ok) * src_len(stream_idx);
-        Statistics.ratio_s(stream_idx) = ~crc_ok;
+    if LDPCCodingRateMatchingParam.partial_cb_decode
+        Statistics.NumOfErrorBit_s(stream_idx) = NaN;
+        Statistics.ratio_s(stream_idx) = NaN;
     else
-        if stream_idx == 1
-            reference_start = 1;
+        if isempty(reference_bits)
+            tb_crc_ok = LDPCCodingRateMatchingParam.last_tb_crc_ok;
+            Statistics.NumOfErrorBit_s(stream_idx) = ...
+                (~tb_crc_ok) * src_len(stream_idx);
+            Statistics.ratio_s(stream_idx) = ~tb_crc_ok;
         else
-            reference_start = sum(src_len(1:stream_idx-1)) + ...
-                24 * (stream_idx - 1) + 1;
+            if stream_idx == 1
+                reference_start = 1;
+            else
+                reference_start = sum(src_len(1:stream_idx-1)) + ...
+                    24 * (stream_idx - 1) + 1;
+            end
+            reference_range = reference_start:reference_start + src_len(stream_idx) - 1;
+            [Statistics.NumOfErrorBit_s(stream_idx), ...
+                Statistics.ratio_s(stream_idx)] = symerr( ...
+                des_bits(1:src_len(stream_idx)), reference_bits(reference_range));
         end
-        reference_range = reference_start:reference_start + src_len(stream_idx) - 1;
-        [Statistics.NumOfErrorBit_s(stream_idx), ...
-            Statistics.ratio_s(stream_idx)] = symerr( ...
-            des_bits(1:src_len(stream_idx)), reference_bits(reference_range));
-    end
 
-    if stream_idx == 1
-        if TransIndex(stream_idx) == HARQParam.MaxTranx && ...
-                Statistics.ratio_s(stream_idx) > 0
+        if stream_idx == 1
+            if TransIndex(stream_idx) == HARQParam.MaxTranx && ...
+                    Statistics.ratio_s(stream_idx) > 0
+                Statistics.BER_arr_Num(stream_idx) = ...
+                    Statistics.BER_arr_Num(stream_idx) + ...
+                    Statistics.NumOfErrorBit_s(stream_idx);
+                Statistics.BER_arr_naw(stream_idx) = ...
+                    Statistics.BER_arr_naw(stream_idx) + ...
+                    Statistics.ratio_s(stream_idx);
+            end
+        else
             Statistics.BER_arr_Num(stream_idx) = ...
                 Statistics.BER_arr_Num(stream_idx) + ...
                 Statistics.NumOfErrorBit_s(stream_idx);
@@ -62,12 +74,6 @@ for stream_idx = 1:Ns
                 Statistics.BER_arr_naw(stream_idx) + ...
                 Statistics.ratio_s(stream_idx);
         end
-    else
-        Statistics.BER_arr_Num(stream_idx) = ...
-            Statistics.BER_arr_Num(stream_idx) + ...
-            Statistics.NumOfErrorBit_s(stream_idx);
-        Statistics.BER_arr_naw(stream_idx) = ...
-            Statistics.BER_arr_naw(stream_idx) + Statistics.ratio_s(stream_idx);
     end
 end
 

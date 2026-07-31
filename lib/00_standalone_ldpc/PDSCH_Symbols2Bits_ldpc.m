@@ -27,10 +27,14 @@ llr = newsoft_demodulation36211(Data_for_Demod, ...
     2^modulation_mode(1), SNR_Mod);
 decoder_cfg = LDPCCodingRateMatchingParam.decoder_cfg;
 decoder_cfg.harq_trans_idx(1) = TransIndex(1);
-[des_bits, crc_ok, decoder_cfg] = ldpc_llr_to_bits(llr, decoder_cfg, 1);
+[des_bits, tb_crc_ok, cb_crc_ok, decoder_cfg, decoded_cb_bits] = ...
+    ldpc_llr_to_bits( ...
+        llr, decoder_cfg, 1, LDPCCodingRateMatchingParam.C_cut, ldpc_config.LDPC_decoder_cpp_alter);
 
 LDPCCodingRateMatchingParam.decoder_cfg = decoder_cfg;
-LDPCCodingRateMatchingParam.last_crc_ok = crc_ok;
+LDPCCodingRateMatchingParam.last_tb_crc_ok = tb_crc_ok;
+LDPCCodingRateMatchingParam.last_cb_crc_ok = cb_crc_ok;
+LDPCCodingRateMatchingParam.last_decoded_cb_bits = decoded_cb_bits;
 LDPCCodingRateMatchingParam.LLRbuffer_1 = decoder_cfg.LLRbuffer_list{1};
 LDPCCodingRateMatchingParam.to_decode_softvalue_1 = ...
     decoder_cfg.to_decode_softvalue_list{1};

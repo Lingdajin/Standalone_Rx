@@ -16,6 +16,11 @@ fprintf('===== PDSCH 独立接收机 =====\n');
 cfg_dir = project_root;
 run(fullfile(cfg_dir, 'PDSCH_Receiver_Standalone_Config'));
 
+if ~isnumeric(C_cut) || ~isscalar(C_cut) || ~isfinite(C_cut) || ...
+        C_cut < 0 || C_cut ~= floor(C_cut)
+    error('C_cut必须是非负整数；设置为0代表译码全部CB。');
+end
+
 if ~isfile(VSA_File)
     error(['找不到VSA输入文件: %s\n' ...
         '请把采集文件放入 input 目录、修改配置文件，或设置环境变量 PDSCH_VSA_FILE。'], ...
@@ -87,6 +92,12 @@ HARQParam.TransIndex = 1; HARQParam.ACK = 0;
 HARQParam.MaxTranx = 1; HARQParam.rv_idx_seq = 0;
 HARQParam.ACK_adjust = 0; HARQParam.Adjust_dB = 0;
 
+DecodedResults = struct('frame_index', {}, 'slot_index', {}, ...
+    'total_cb_count', {}, 'decoded_cb_count', {}, 'decoded_cb_mask', {}, ...
+    'tb_crc_ok', {}, 'cb_crc_ok', {}, 'decoded_bits', {}, ...
+    'decoded_cb_bits', {});
+partial_decode_used = false;
+
 %% ==================== 帧/时隙循环 ====================
 snr_N = 1;  % 仅一个SNR点
 for frame_idx = 1:NumFrames
@@ -130,6 +141,18 @@ for frame_idx = 1:NumFrames
         % 计算码块分割参数 (C_save等, 解码必需)
         dummy_bits = zeros(1, src_len(1));
         [C_val, CBS_val, F_val, ~] = LDPC_TBseg(dummy_bits, src_len(1), Rc);
+        if C_cut > C_val
+            error('配置的C_cut=%d超过当前TB的总CB数%d。', C_cut, C_val);
+        end
+        if C_cut == 0
+            decoded_cb_count = C_val;
+        else
+            decoded_cb_count = C_cut;
+        end
+        LDPCCodingRateMatchingParam.C_cut = C_cut;
+        LDPCCodingRateMatchingParam.partial_cb_decode = decoded_cb_count < C_val;
+        partial_decode_used = partial_decode_used || ...
+            LDPCCodingRateMatchingParam.partial_cb_decode;
         E_vec = Erdetermination(DMRS_port, mod_mode(1), G(1), C_val);
         LDPCCodingRateMatchingParam.C_save = C_val;
         LDPCCodingRateMatchingParam.F_save = F_val;
@@ -178,6 +201,26 @@ for frame_idx = 1:NumFrames
             SNR_line, SNRLoopStatistic, AI_SNRLoopStatistic, sigma_est, ...
             slot_idx, SNR_dB_est, snr_N, 0);
 
+        result_index = numel(DecodedResults) + 1;
+        DecodedResults(result_index).frame_index = frame_idx;
+        DecodedResults(result_index).slot_index = slot_idx;
+        DecodedResults(result_index).total_cb_count = C_val;
+        DecodedResults(result_index).decoded_cb_count = decoded_cb_count;
+        DecodedResults(result_index).decoded_cb_mask = ...
+            [true(1, decoded_cb_count), false(1, C_val-decoded_cb_count)];
+        if isempty(LDPCCodingRateMatchingParam.last_tb_crc_ok)
+            DecodedResults(result_index).tb_crc_ok = NaN;
+        else
+            DecodedResults(result_index).tb_crc_ok = ...
+                LDPCCodingRateMatchingParam.last_tb_crc_ok;
+        end
+        DecodedResults(result_index).cb_crc_ok = ...
+            LDPCCodingRateMatchingParam.last_cb_crc_ok;
+        DecodedResults(result_index).decoded_bits = ...
+            LDPCCodingRateMatchingParam.des_bits_all;
+        DecodedResults(result_index).decoded_cb_bits = ...
+            LDPCCodingRateMatchingParam.last_decoded_cb_bits;
+
         % % ==== 星座图诊断 (仅第一个时隙) ====
         % global Debug_Data_after_Equ Debug_SNR_after_Equ
         % if frame_idx == 1 && slot_idx == 1
@@ -215,12 +258,36 @@ for frame_idx = 1:NumFrames
 end
 
 %% ==================== 输出 ====================
-BLER_t = sum(SNRLoopStatistic.BLER_t_f);
-BLER_e = sum(SNRLoopStatistic.BLER_e_f);
+DMRS_EVM = SNRLoopStatistic.DMRS_EVM_sum / ...
+    max(SNRLoopStatistic.DMRS_EVM_count, 1);
 fprintf('\n===== 统计结果 =====\n');
-fprintf('PDSCH时隙:%d 误块:%d  BLER:%.4f\n', BLER_t, BLER_e, BLER_e/max(BLER_t,1));
-fprintf('EVM_avg:%.2f%%  DMRS_EVM:%.2f%%\n', SNRLoopStatistic.EVM_sum / SNRLoopStatistic.EVM_count * 100, SNRLoopStatistic.DMRS_EVM_sum / SNRLoopStatistic.DMRS_EVM_count * 100);
+if partial_decode_used
+    BER = NaN;
+    BLER = NaN;
+    BLER_t = NaN;
+    BLER_e = NaN;
+    EVM = NaN;
+    Metrics = struct('available', false, ...
+        'reason', '仅译码部分CB，BER/BLER/EVM不可用。', ...
+        'BER', BER, 'BLER', BLER, 'EVM', EVM, 'DMRS_EVM', DMRS_EVM);
+    fprintf('BER:不可用  BLER:不可用  EVM:不可用 (仅译码部分CB)\n');
+else
+    BLER_t = sum(SNRLoopStatistic.BLER_t_f);
+    BLER_e = sum(SNRLoopStatistic.BLER_e_f);
+    BER = sum(SNRLoopStatistic.BER_arr_Num) / ...
+        max(sum(SNRLoopStatistic.BLER_t_f .* src_len), 1);
+    BLER = BLER_e / max(BLER_t, 1);
+    EVM = SNRLoopStatistic.EVM_sum / max(SNRLoopStatistic.EVM_count, 1);
+    Metrics = struct('available', true, 'reason', '', ...
+        'BER', BER, 'BLER', BLER, 'EVM', EVM, 'DMRS_EVM', DMRS_EVM);
+    fprintf('PDSCH时隙:%d 误块:%d  BER:%.4e  BLER:%.4f\n', ...
+        BLER_t, BLER_e, BER, BLER);
+    fprintf('EVM_avg:%.2f%%\n', EVM * 100);
+end
+fprintf('DMRS_EVM:%.2f%%\n', DMRS_EVM * 100);
 result_dir = fileparts(ResultSaveFile);
 if ~isfolder(result_dir), mkdir(result_dir); end
-save(ResultSaveFile, 'BLER_t', 'BLER_e', 'SNR_dB_est', 'MCS', 'NumOfRB', 'DMRS_port');
+save(ResultSaveFile, 'DecodedResults', 'Metrics', 'BER', 'BLER', ...
+    'BLER_t', 'BLER_e', 'EVM', 'DMRS_EVM', 'C_cut', ...
+    'SNR_dB_est', 'MCS', 'NumOfRB', 'DMRS_port');
 fprintf('结果保存: %s\n', ResultSaveFile);

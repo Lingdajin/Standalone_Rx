@@ -361,10 +361,15 @@ elseif channel_code==2
     src_len              = LDPCCodingRateMatchingParam.src_len;
     [ SNRLoopStatistic,NumOfErrorBit_s ] = PDSCH_Demodulation_Revised_z(Data_after_Equ,SNR_after_Equ,SNRLoopStatistic,TransIndex,current_index);
 end
+partial_cb_decode = channel_code == 2 && ...
+    isfield(LDPCCodingRateMatchingParam, 'partial_cb_decode') && ...
+    LDPCCodingRateMatchingParam.partial_cb_decode;
 
 %% EVM计算 (仅无误码frame: 收端解码比特→重编码→重调制→理想星座点)
 evm_str = '';   % 初始化EVM信息字符串
-if all(NumOfErrorBit_s == 0) && channel_code == 2
+if partial_cb_decode
+    evm_str = '--EVM:N/A(partial CB decode)';
+elseif all(NumOfErrorBit_s == 0) && channel_code == 2
     try
         des_bits_all = LDPCCodingRateMatchingParam.des_bits_all;
         if ~isempty(des_bits_all)
@@ -388,12 +393,13 @@ end
 
 %% Caculate Statistic of Each Frame Circulation
 % Judge if two streams retransmission is indepent<0> or binded<1>.
-if RetransmissionIsBind == 1                            % 捆绑式重传
-    if sum(NumOfErrorBit_s) ~= 0
-        NumOfErrorBit_s = ones(1,Ns_max);               % 一流错认为两流都错
-        SNRLoopStatistic.err_frame(TransIndex) = SNRLoopStatistic.err_frame(TransIndex) + 1;
+if ~partial_cb_decode
+    if RetransmissionIsBind == 1                        % 捆绑式重传
+        if sum(NumOfErrorBit_s) ~= 0
+            NumOfErrorBit_s = ones(1,Ns_max);           % 一流错认为两流都错
+            SNRLoopStatistic.err_frame(TransIndex) = SNRLoopStatistic.err_frame(TransIndex) + 1;
+        end
     end
-end
 % Count first transmission frame and first transmission error frame.
 for nta = 1:Ns
     if  TransIndex(nta) == 1
@@ -430,6 +436,7 @@ for nta = 1:Ns
         end
     end
 end
+end
 % --------------------------强制传输最大次数--------------------------
 % HARQParam.TransIndex(nta) = TransIndex(nta) + 1;
 % if HARQParam.TransIndex(nta) > MaxTrans
@@ -453,7 +460,12 @@ switch TM
         layernum = Ns;
 end
 if mod(frame_counter,1) == 0
-    if Ns_max == 1
+    if partial_cb_decode
+        fprintf(['SNR:%.1f[dB]--N_Frame:%d--n_s_f:%d--Ns:%d--' ...
+            'layernum:%d--BER:N/A--BLER:N/A%s%s\n'], ...
+            SNR_dB(snr_N), frame_counter, SystemParam.n_s_f, ...
+            SystemParam.Ns, layernum, evm_str, dmrs_evm_str);
+    elseif Ns_max == 1
         fprintf('SNR:%.1f[dB]--N_Frame:%d--n_s_f:%d--N_Block:%d--Ns:%d--layernum:%d--Sum_BER:%.3f--tempBLER1:%.3f--TransIndex:%d--BLER:%.3f--myTP:%.3f%s%s\n',SNR_dB(snr_N),frame_counter,SystemParam.n_s_f,SNRLoopStatistic.BLER_t_f,SystemParam.Ns,layernum,SNRLoopStatistic.BER_arr_naw,SNRLoopStatistic.BLER_e_f/SNRLoopStatistic.BLER_t_f,TransIndex,SNRLoopStatistic.error_frame/SNRLoopStatistic.BLER_t_f,sum(SNRLoopStatistic.Throughput_frame)./frame_counter,evm_str,dmrs_evm_str);
         %fprintf('AI : SNR:%.1f[dB]--N_Frame:%d--N_Block:%d--Ns:%d--layernum:%d--Sum_BER:%.3f--tempBLER1:%.3f--TransIndex:%d--BLER:%.3f--myTP:%.3f%s\n',SNR_dB(snr_N),frame_counter,AI_SNRLoopStatistic.BLER_t_f,SystemParam.Ns,layernum,AI_SNRLoopStatistic.BER_arr_naw,AI_SNRLoopStatistic.BLER_e_f/AI_SNRLoopStatistic.BLER_t_f,TransIndex,AI_SNRLoopStatistic.error_frame/AI_SNRLoopStatistic.BLER_t_f,sum(AI_SNRLoopStatistic.Throughput_frame)./frame_counter,evm_str);
     else

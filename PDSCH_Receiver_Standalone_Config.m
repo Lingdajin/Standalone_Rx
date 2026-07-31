@@ -42,6 +42,11 @@ MCS             = 13;   % MCS索引 (对应调制阶数和码率)
 % 以下由TBS_calculation_f30自动计算:
 % src_len, modulation_mode, Rc
 
+%% ---------- LDPC译码范围 ----------
+% 0=译码全部CB; 正整数N=仅译码每个TB最前面的N个CB
+% 当N小于TB的总CB数时，BER/BLER/EVM不可用，未译码的输出比特保存为-1。
+C_cut = 1;
+
 %% ---------- 帧/时隙结构 ----------
 NumFrames        = 1;       % 文件包含的无线帧数 (手动配置)
 % TDD pattern: 标记帧内每个时隙是否为PDSCH(DL)时隙
