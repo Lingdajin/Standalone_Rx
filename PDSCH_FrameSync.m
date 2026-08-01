@@ -1,4 +1,4 @@
-function [syncoffset, NumFrames] = PDSCH_FrameSync(sig_rx_all, Fs_val, ...
+function [frame_start_offsets, NumFrames] = PDSCH_FrameSync(sig_rx_all, Fs_val, ...
     samples_per_slot, samples_per_frame, NumFrames_cfg, ...
     DL_Slot_Mask, SystemParam, ...
     TM, CFI, CPType, NumOfAddDMRS, DMRS_port, DMRSLength, DMRS_Type, ...
@@ -22,11 +22,11 @@ function [syncoffset, NumFrames] = PDSCH_FrameSync(sig_rx_all, Fs_val, ...
 %                       : PDSCH / DMRS 配置参数
 %
 % Output:
-%   syncoffset  : 帧头(时隙0)距VSA文件开头的样本偏移
-%   NumFrames   : 基于同步后有效长度重新计算的可用帧数
+%   frame_start_offsets : 每个可处理帧的零基样本偏移；首项允许为负数
+%   NumFrames           : 可处理帧数
 %
 % 中间变量 (通过 fprintf 输出, 不在返回值中):
-%   first_dl_slot, slot_start_offset, corr_quality
+%   first_dl_slot, slot_start_offsets, corr_quality
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % 从 SystemParam 提取局部变量
@@ -196,74 +196,92 @@ fprintf('完成 (%.1fs)\n', toc);
 
 mid_corr_normalized = mid_corr / max(max(mid_corr), eps);
 mid_sync_score = mid_corr_normalized .* mid_cp_metric;
-[~, mid_peak_idx] = max(mid_sync_score);
-mid_peak = mid_range(mid_peak_idx);
-fprintf('对齐DMRS峰值: offset=%d (%.3fms) corr=%.4f CP=%.4f score=%.4f\n', ...
-    mid_peak, mid_peak/Fs_val*1e3, mid_corr(mid_peak_idx), ...
-    mid_cp_metric(mid_peak_idx), mid_sync_score(mid_peak_idx));
+[mid_peak_indices, peak_threshold] = PDSCH_DetectFramePeaks(...
+    mid_range, mid_sync_score, Fs_val);
+mid_peaks = mid_range(mid_peak_indices);
+fprintf('检测到%d个帧峰 (阈值=%.4f): [%s] ms\n', ...
+    numel(mid_peaks), peak_threshold, ...
+    num2str(mid_peaks / Fs_val * 1e3, '%.3f '));
 
-%% Step 6: 精细搜索 (DMRS相关 + CP符号边界度量)
+%% Step 6: 对每个帧峰分别进行精细搜索
 fine_half = coarse_step;
-fine_start = max(search_start, mid_peak - fine_half);
-fine_end   = min(last_search_offset, mid_peak + fine_half);
-fine_range = fine_start : fine_end;
-fine_corr  = zeros(size(fine_range));
-fine_cp_metric = cp_timing_metric(sig_rx_all, fine_range, FFT_size, cp_vec, cp_metric_cache);
+num_detected_peaks = numel(mid_peaks);
+fine_ranges = cell(1, num_detected_peaks);
+fine_sync_scores = cell(1, num_detected_peaks);
+slot_start_offsets = zeros(1, num_detected_peaks);
+peak_corr_values = zeros(1, num_detected_peaks);
+peak_cp_metrics = zeros(1, num_detected_peaks);
+peak_sync_scores = zeros(1, num_detected_peaks);
+corr_quality = zeros(1, num_detected_peaks);
 
-fprintf('精搜索: 范围[%d,%d] 步长=1 (%d个候选)...', fine_start, fine_end, length(fine_range));
+fprintf('逐帧精搜索: %d个峰...', num_detected_peaks);
 tic;
-for idx = 1:length(fine_range)
-    offset = fine_range(idx);
-    seg = sig_rx_all(:, offset + 1 : offset + samples_per_slot);
-    FFT_Out_test = OFDM_DeModulater(seg, FFT_size, cp_vec, samples_per_slot, Nr, Nd, ones(1, Nd));
-    fine_corr(idx) = dmrs_correlation(FFT_Out_test, DMRS_COL_sync, DMRS_pos_sync, DMRS_sig_sync, Nr, DMRS_port);
+for peak_number = 1:num_detected_peaks
+    mid_peak = mid_peaks(peak_number);
+    fine_start = max(search_start, mid_peak - fine_half);
+    fine_end = min(last_search_offset, mid_peak + fine_half);
+    fine_range = fine_start:fine_end;
+    fine_corr = zeros(size(fine_range));
+    fine_cp_metric = cp_timing_metric(sig_rx_all, fine_range, ...
+        FFT_size, cp_vec, cp_metric_cache);
+
+    for idx = 1:length(fine_range)
+        offset = fine_range(idx);
+        seg = sig_rx_all(:, offset + 1 : offset + samples_per_slot);
+        FFT_Out_test = OFDM_DeModulater(seg, FFT_size, cp_vec, ...
+            samples_per_slot, Nr, Nd, ones(1, Nd));
+        fine_corr(idx) = dmrs_correlation(FFT_Out_test, DMRS_COL_sync, ...
+            DMRS_pos_sync, DMRS_sig_sync, Nr, DMRS_port);
+    end
+
+    fine_corr_normalized = fine_corr / max(max(fine_corr), eps);
+    fine_sync_score = fine_corr_normalized .* fine_cp_metric;
+    [~, fine_peak_idx] = max(fine_sync_score);
+    slot_start_offsets(peak_number) = fine_range(fine_peak_idx);
+    peak_corr_values(peak_number) = fine_corr(fine_peak_idx);
+    peak_cp_metrics(peak_number) = fine_cp_metric(fine_peak_idx);
+    peak_sync_scores(peak_number) = fine_sync_score(fine_peak_idx);
+    fine_ranges{peak_number} = fine_range;
+    fine_sync_scores{peak_number} = fine_sync_score;
+
+    valid_score = fine_sync_score(fine_sync_score > 0);
+    if isempty(valid_score)
+        corr_quality(peak_number) = 1.0;
+    else
+        corr_quality(peak_number) = ...
+            fine_sync_score(fine_peak_idx) / mean(valid_score);
+    end
 end
 fprintf('完成 (%.1fs)\n', toc);
 
-% DMRS相关在窄带资源分配时可能存在局部假峰；CP相关用于约束真实OFDM符号边界。
-% 两项均归一化后相乘，只有同时满足DMRS匹配与CP对齐的候选才会胜出。
-fine_corr_normalized = fine_corr / max(max(fine_corr), eps);
-fine_sync_score = fine_corr_normalized .* fine_cp_metric;
-[~, fine_peak_idx] = max(fine_sync_score);
-slot_start_offset = fine_range(fine_peak_idx);
-peak_corr_value   = fine_corr(fine_peak_idx);
-peak_cp_metric    = fine_cp_metric(fine_peak_idx);
-
-%% Step 7: 质量评估
-valid_score = fine_sync_score(fine_sync_score > 0);
-if isempty(valid_score)
-    corr_quality = 1.0;
-    warning('帧同步: 所有相关值均为0, 同步可能失败!');
-else
-    corr_quality = fine_sync_score(fine_peak_idx) / mean(valid_score);
-end
-if corr_quality < 3.0
-    warning('帧同步: 相关质量偏低 (%.1fx < 3.0x), 同步结果可能不可靠.', corr_quality);
+if any(corr_quality < 3.0)
+    warning('帧同步: %d个帧峰的相关质量低于3.0x，结果可能不可靠。', ...
+        nnz(corr_quality < 3.0));
 end
 
-%% Step 8: 计算帧头位置
-syncoffset = slot_start_offset - (first_dl_slot - 1) * samples_per_slot;
-if syncoffset < 0
-    syncoffset = syncoffset + samples_per_frame;
+%% Step 7: 将检测峰转换为帧头，并处理首尾不完整帧
+candidate_frame_starts = slot_start_offsets - ...
+    (first_dl_slot - 1) * samples_per_slot;
+frame_start_offsets = PDSCH_UsableFrameOffsets(candidate_frame_starts, ...
+    num_samples, samples_per_slot, samples_per_frame, ...
+    DL_Slot_Mask, NumFrames_cfg);
+NumFrames = numel(frame_start_offsets);
+if NumFrames == 0
+    error('PDSCH_FrameSync:NoUsableFrames', ...
+        '同步成功，但文件中没有完整包含全部配置DL时隙的帧。');
 end
-
-%% Step 9: 计算可用帧数
-usable_len     = num_samples - syncoffset;
-NumFrames_sync = max(0, floor(usable_len / samples_per_frame));
-NumFrames      = min(NumFrames_cfg, NumFrames_sync);
 
 %% Step 10: 输出
 fprintf('========================================\n');
 fprintf('帧同步结果:\n');
-fprintf('  syncoffset       = %d 样点 (%.2f ms, 帧头距VSA开头)\n', ...
-    syncoffset, syncoffset / Fs_val * 1e3);
-fprintf('  第一个PDSCH时隙   = slot#%d, 起始偏移 %d 样点 (%.2f ms)\n', ...
-    first_dl_slot, slot_start_offset, slot_start_offset / Fs_val * 1e3);
-fprintf('  相关峰值          = %.2f (质量因子=%.1fx)\n', peak_corr_value, corr_quality);
-fprintf('  CP边界度量        = %.4f (联合评分=%.4f)\n', ...
-    peak_cp_metric, fine_sync_score(fine_peak_idx));
+fprintf('  联合曲线有效峰数  = %d\n', num_detected_peaks);
+fprintf('  可处理帧头偏移    = [%s] 样点\n', num2str(frame_start_offsets));
+fprintf('  PDSCH时隙起始     = [%s] 样点\n', num2str(slot_start_offsets));
+fprintf('  相关峰值          = [%s]\n', num2str(peak_corr_values, '%.4f '));
+fprintf('  CP边界度量        = [%s]\n', num2str(peak_cp_metrics, '%.4f '));
 fprintf('  三级搜索           = 粗CP(%d) → 对齐DMRS(%d) → 精搜(%d) 候选\n', ...
-    length(coarse_cp_metric), length(mid_corr), length(fine_corr));
+    length(coarse_cp_metric), length(mid_corr), ...
+    sum(cellfun(@numel, fine_ranges)));
 fprintf('  可用帧数          = %d (VSA总长=%d样点=%.1fms, 信号区域=[%.1f,%.1f]ms)\n', ...
     NumFrames, num_samples, num_samples/Fs_val*1e3, ...
     search_start/Fs_val*1e3, signal_end/Fs_val*1e3);
@@ -280,17 +298,25 @@ grid on;
 
 subplot(3,1,2);
 plot(mid_range/Fs_val*1e3, mid_sync_score, 'b.-');
-hold on; plot(mid_peak/Fs_val*1e3, mid_sync_score(mid_peak_idx), 'ro', 'MarkerSize', 10);
+hold on;
+plot(mid_peaks/Fs_val*1e3, mid_sync_score(mid_peak_indices), ...
+    'ro', 'MarkerSize', 8);
+yline(peak_threshold, 'r--', 'Frame peak threshold');
 xlabel('Offset (ms)'); ylabel('Joint score');
-title(sprintf('Aligned-slot DMRS x CP (%d candidates)', length(mid_range)));
+title(sprintf('Aligned-slot DMRS x CP (%d candidates, %d frame peaks)', ...
+    length(mid_range), num_detected_peaks));
 grid on;
 
 subplot(3,1,3);
-plot(fine_range/Fs_val*1e3, fine_sync_score, 'b.-');
-hold on; plot(slot_start_offset/Fs_val*1e3, fine_sync_score(fine_peak_idx), 'ro', 'MarkerSize', 10);
+hold on;
+for peak_number = 1:num_detected_peaks
+    plot(fine_ranges{peak_number}/Fs_val*1e3, ...
+        fine_sync_scores{peak_number}, 'b.-');
+end
+plot(slot_start_offsets/Fs_val*1e3, peak_sync_scores, ...
+    'ro', 'MarkerSize', 8);
 xlabel('Offset (ms)'); ylabel('Joint score');
-title(sprintf('Fine DMRS (peak=%.3fms, CP=%.3f)', ...
-    slot_start_offset/Fs_val*1e3, peak_cp_metric));
+title(sprintf('Per-frame fine DMRS (%d peaks)', num_detected_peaks));
 grid on;
 drawnow;
 

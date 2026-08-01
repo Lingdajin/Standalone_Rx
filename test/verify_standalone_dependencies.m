@@ -1,15 +1,17 @@
 function requiredFiles = verify_standalone_dependencies()
 %VERIFY_STANDALONE_DEPENDENCIES 检查入口和测试是否引用项目外部文件。
 
-projectRoot = fileparts(mfilename('fullpath'));
+testRoot = fileparts(mfilename('fullpath'));
+projectRoot = fileparts(testRoot);
 entries = {
     fullfile(projectRoot, 'PDSCH_Receiver_Standalone.m')
     fullfile(projectRoot, 'PDSCH_Receiver_Standalone_Config.m')
     fullfile(projectRoot, 'PDSCH_Init_Standalone.m')
-    fullfile(projectRoot, 'test_cp_frequency_offset_estimate.m')
-    fullfile(projectRoot, 'test_cp_timing_metric.m')
-    fullfile(projectRoot, 'test_load_standalone_vsa.m')
-    fullfile(projectRoot, 'test_nr_dmrs_fd_occ_despread.m')
+    fullfile(testRoot, 'test_cp_frequency_offset_estimate.m')
+    fullfile(testRoot, 'test_cp_timing_metric.m')
+    fullfile(testRoot, 'test_load_standalone_vsa.m')
+    fullfile(testRoot, 'test_nr_dmrs_fd_occ_despread.m')
+    fullfile(testRoot, 'test_usable_frame_offsets.m')
     };
 
 [requiredFiles, products] = matlab.codetools.requiredFilesAndProducts(entries);

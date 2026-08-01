@@ -46,8 +46,37 @@ fprintf('Fs=%.2fMHz 天线=%d 长=%d样点(%.2fms)\n', ...
 %% ==================== 初始化全局 ====================
 run(fullfile(cfg_dir, 'PDSCH_Init_Standalone'));
 
-%% ==================== 时隙参数 ====================
+%% ==================== 采样率检测与重采样 ====================
+% 接收机设计采样率: FFT_size * SCS = FFT_size * 15e3 * 2^miu
+% VSA 实际采样率可能与此不一致, 需要重采样到期望采样率
 global SystemParam
+Fs_expected = SystemParam.SampleFreq;   % FFT_size * 15e3 * 2^miu
+if abs(Fs_val - Fs_expected) / Fs_expected > 1e-6
+    fprintf('? VSA采样率(%.4f MHz)与接收机期望采样率(%.4f MHz)不一致，执行重采样...\n', ...
+        Fs_val/1e6, Fs_expected/1e6);
+
+    % 使用有理逼近计算重采样因子 P/Q ≈ Fs_expected / Fs_val
+    tol = min(1e-6, abs(Fs_expected - Fs_val) / Fs_val / 10);
+    [P, Q] = rat(Fs_expected / Fs_val, tol);
+    fprintf('  有理逼近因子: %d / %d (ratio=%.9f)\n', P, Q, P/Q);
+
+    sig_len_old = size(sig_rx_all, 2);
+    sig_len_new = round(sig_len_old * Fs_expected / Fs_val);
+    sig_rx_resampled = zeros(Nr, sig_len_new);
+    for ant = 1:Nr
+        sig_rx_resampled(ant, :) = resample(sig_rx_all(ant, :), P, Q);
+    end
+    sig_rx_all = sig_rx_resampled;
+    Fs_val     = Fs_expected;
+    clear sig_rx_resampled;
+
+    fprintf('  重采样完成: %d → %d 样点 (新采样率 %.4f MHz)\n', ...
+        sig_len_old, sig_len_new, Fs_val/1e6);
+else
+    fprintf('? VSA采样率(%.4f MHz)与接收机期望采样率一致，无需重采样。\n', Fs_val/1e6);
+end
+
+%% ==================== 时隙参数 ====================
 cp_vec = SystemParam.LengthOfGI_vec;
 FFT_size = SystemParam.FFT_size; Nd = SystemParam.Nd;
 samples_per_slot  = FFT_size * Nd + sum(cp_vec);
@@ -55,7 +84,7 @@ samples_per_frame = samples_per_slot * N_slots_frame;
 fprintf('时隙=%d样点 帧=%d时隙\n', samples_per_slot, N_slots_frame);
 
 %% ==================== 帧同步 (DMRS频域相关) ====================
-[syncoffset, NumFrames] = PDSCH_FrameSync(sig_rx_all, Fs_val, ...
+[frame_start_offsets, NumFrames] = PDSCH_FrameSync(sig_rx_all, Fs_val, ...
     samples_per_slot, samples_per_frame, NumFrames, ...
     DL_Slot_Mask, SystemParam, ...
     TM, CFI, CPType, NumOfAddDMRS, DMRS_port, DMRSLength, DMRS_Type, ...
@@ -63,7 +92,7 @@ fprintf('时隙=%d样点 帧=%d时隙\n', samples_per_slot, N_slots_frame);
 
 %% ==================== 频偏估计与补偿 (DMRS) ====================
 [sig_rx_all, freq_offset_hz] = PDSCH_FreqOffsetComp(sig_rx_all, Fs_val, ...
-    syncoffset, samples_per_slot, samples_per_frame, ...
+    frame_start_offsets, samples_per_slot, samples_per_frame, ...
     DL_Slot_Mask, SystemParam, ...
     TM, CFI, CPType, NumOfAddDMRS, DMRS_port, DMRSLength, DMRS_Type, ...
     DMRS_ScramblingID0, DMRS_ScramblingID1, DMRS_nSCID, dmrs_TypeA_Position, Nr);
@@ -92,7 +121,8 @@ HARQParam.TransIndex = 1; HARQParam.ACK = 0;
 HARQParam.MaxTranx = 1; HARQParam.rv_idx_seq = 0;
 HARQParam.ACK_adjust = 0; HARQParam.Adjust_dB = 0;
 
-DecodedResults = struct('frame_index', {}, 'slot_index', {}, ...
+DecodedResults = struct('frame_index', {}, 'frame_start_offset', {}, ...
+    'slot_index', {}, ...
     'total_cb_count', {}, 'decoded_cb_count', {}, 'decoded_cb_mask', {}, ...
     'tb_crc_ok', {}, 'cb_crc_ok', {}, 'decoded_bits', {}, ...
     'decoded_cb_bits', {});
@@ -101,7 +131,7 @@ partial_decode_used = false;
 %% ==================== 帧/时隙循环 ====================
 snr_N = 1;  % 仅一个SNR点
 for frame_idx = 1:NumFrames
-    f0 = syncoffset + (frame_idx-1) * samples_per_frame + 1;
+    f0 = frame_start_offsets(frame_idx) + 1;
     for slot_idx = 1:N_slots_frame
         if ~DL_Slot_Mask(slot_idx), continue; end
         n_s_f = slot_idx - 1; SystemParam.n_s_f = n_s_f;
@@ -203,6 +233,8 @@ for frame_idx = 1:NumFrames
 
         result_index = numel(DecodedResults) + 1;
         DecodedResults(result_index).frame_index = frame_idx;
+        DecodedResults(result_index).frame_start_offset = ...
+            frame_start_offsets(frame_idx);
         DecodedResults(result_index).slot_index = slot_idx;
         DecodedResults(result_index).total_cb_count = C_val;
         DecodedResults(result_index).decoded_cb_count = decoded_cb_count;
@@ -289,5 +321,6 @@ result_dir = fileparts(ResultSaveFile);
 if ~isfolder(result_dir), mkdir(result_dir); end
 save(ResultSaveFile, 'DecodedResults', 'Metrics', 'BER', 'BLER', ...
     'BLER_t', 'BLER_e', 'EVM', 'DMRS_EVM', 'C_cut', ...
-    'SNR_dB_est', 'MCS', 'NumOfRB', 'DMRS_port');
+    'SNR_dB_est', 'MCS', 'NumOfRB', 'DMRS_port', ...
+    'frame_start_offsets', 'NumFrames');
 fprintf('结果保存: %s\n', ResultSaveFile);

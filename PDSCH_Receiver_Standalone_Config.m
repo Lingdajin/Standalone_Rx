@@ -9,7 +9,7 @@ config_dir = fileparts(mfilename('fullpath'));
 VSA_File = getenv('PDSCH_VSA_FILE');
 if isempty(VSA_File)
     VSA_File = fullfile(config_dir, 'input', ...
-        'PDSCH_TX_BW100M_SCS30kHz_SNR25_10ms_ANT8_padded_3frame.mat');
+        'VSA.mat');
 end
 
 %% ---------- 系统参数 (需与发射端一致) ----------
@@ -18,13 +18,13 @@ BW      = 100e6;         % 带宽 (Hz)
 NumOfRB = 10;           % 使用的RB数
 miu     = 1;             % SCS: 0=15k,1=30k,2=60k,3=120k,4=240k,5=480k,6=960k
 CPType  = 1;             % 1=NCP, 2=ECP
-Nt      = 8;             % 发射天线数
-Nr      = 8;             % 接收天线数
+Nt      = 1;             % 发射天线数
+Nr      = 1;             % 接收天线数
 
 %% ---------- DMRS配置 (需与发射端一致) ----------
-DMRS_port           = 8;      % DMRS端口数 (1~8)
+DMRS_port           = 1;      % DMRS端口数 (1~8)
 NumOfAddDMRS        = 1;      % 附加DMRS位置 {0,1,2,3}
-DMRSLength          = 2;      % 1=单符号, 2=双符号
+DMRSLength          = 1;      % 1=单符号, 2=双符号
 DMRS_Type           = 1;      % 1=Type1(comb-2)
 DMRS_ScramblingID0  = 0;      % N_ID^0
 DMRS_ScramblingID1  = 1;      % N_ID^1
@@ -45,15 +45,15 @@ MCS             = 13;   % MCS索引 (对应调制阶数和码率)
 %% ---------- LDPC译码范围 ----------
 % 0=译码全部CB; 正整数N=仅译码每个TB最前面的N个CB
 % 当N小于TB的总CB数时，BER/BLER/EVM不可用，未译码的输出比特保存为-1。
-C_cut = 1;
+C_cut = 0;
 
 %% ---------- 帧/时隙结构 ----------
-NumFrames        = 1;       % 文件包含的无线帧数 (手动配置)
+NumFrames        = 0;       % 无线帧数: 0=自动检测VSA中所有完整帧; >0=最多处理N帧
 % TDD pattern: 标记帧内每个时隙是否为PDSCH(DL)时隙
 % miu=0: 10时隙/帧, miu=1: 20时隙/帧, miu=2: 40时隙/帧
 % 例: miu=1,20时隙, pattern [3:18]=1 表示时隙3~18为PDSCH
 N_slots_frame = 10 * 2^miu;
-DL_Slot_Mask = ones(1, N_slots_frame);  % 1=PDSCH(DL), 0=UL/GP
+DL_Slot_Mask = [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];  % 1=PDSCH(DL), 0=UL/GP
 
 %% ---------- 其他 ----------
 SNR_dB_est   = 25;   % 估计SNR (dB), 用于LMMSE信道估计; 未知时设为合理值
