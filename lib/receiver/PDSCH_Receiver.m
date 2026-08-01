@@ -347,10 +347,10 @@ else
     %DataStruct.llr_raw(current_index,:) = Data_after_Equ;
 end
 %% Demodulation, decoding and combining
-% % 星座图诊断用
-% global Debug_Data_after_Equ Debug_SNR_after_Equ
-% Debug_Data_after_Equ = Data_after_Equ;
-% Debug_SNR_after_Equ = SNR_after_Equ;
+% 星座图可视化: 将均衡后数据通过全局变量传出
+global Debug_Data_after_Equ Debug_SNR_after_Equ
+Debug_Data_after_Equ = Data_after_Equ;
+Debug_SNR_after_Equ = SNR_after_Equ;
 LDPCCodingRateMatchingParam.des_bits_all = [];  % 重置EVM解码比特缓存
 if channel_code==1
     modulation_mode      = TurboCodingRateMatchingParam.modulation_mode;

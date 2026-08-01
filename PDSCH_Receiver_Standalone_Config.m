@@ -15,7 +15,7 @@ end
 %% ---------- ÏµÍ³²ÎÊı (ĞèÓë·¢Éä¶ËÒ»ÖÂ) ----------
 TM      = 'NR';          % ´«ÊäÄ£Ê½: 'NR'
 BW      = 100e6;         % ´ø¿í (Hz)
-NumOfRB = 10;           % Ê¹ÓÃµÄRBÊı
+NumOfRB = 273;           % Ê¹ÓÃµÄRBÊı
 miu     = 1;             % SCS: 0=15k,1=30k,2=60k,3=120k,4=240k,5=480k,6=960k
 CPType  = 1;             % 1=NCP, 2=ECP
 Nt      = 1;             % ·¢ÉäÌìÏßÊı
@@ -23,7 +23,7 @@ Nr      = 1;             % ½ÓÊÕÌìÏßÊı
 
 %% ---------- DMRSÅäÖÃ (ĞèÓë·¢Éä¶ËÒ»ÖÂ) ----------
 DMRS_port           = 1;      % DMRS¶Ë¿ÚÊı (1~8)
-NumOfAddDMRS        = 1;      % ¸½¼ÓDMRSÎ»ÖÃ {0,1,2,3}
+NumOfAddDMRS        = 0;      % ¸½¼ÓDMRSÎ»ÖÃ {0,1,2,3}
 DMRSLength          = 1;      % 1=µ¥·ûºÅ, 2=Ë«·ûºÅ
 DMRS_Type           = 1;      % 1=Type1(comb-2)
 DMRS_ScramblingID0  = 0;      % N_ID^0
@@ -38,7 +38,7 @@ CE_Mode_CSIRS = 0;    % (NR²»ÓÃ)
 
 %% ---------- MCS / ´«Êä¿éÅäÖÃ (ĞèÓë·¢Éä¶ËÒ»ÖÂ) ----------
 MCS_TABLE_PDSCH = 1;   % 1=Table1(64QAM), 2=Table2(256QAM), 3=Table3(64QAM-lowSE)
-MCS             = 13;   % MCSË÷Òı (¶ÔÓ¦µ÷ÖÆ½×ÊıºÍÂëÂÊ)
+MCS             = 20;   % MCSË÷Òı (¶ÔÓ¦µ÷ÖÆ½×ÊıºÍÂëÂÊ)
 % ÒÔÏÂÓÉTBS_calculation_f30×Ô¶¯¼ÆËã:
 % src_len, modulation_mode, Rc
 
@@ -55,11 +55,19 @@ NumFrames        = 0;       % ÎŞÏßÖ¡Êı: 0=×Ô¶¯¼ì²âVSAÖĞËùÓĞÍêÕûÖ¡; >0=×î¶à´¦ÀíNÖ
 N_slots_frame = 10 * 2^miu;
 DL_Slot_Mask = [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];  % 1=PDSCH(DL), 0=UL/GP
 
+%% ---------- PDSCH OFDM·ûºÅÅäÖÃ ----------
+% PDSCH_StartSymbol: PDSCHÔÚÃ¿Ê±Ï¶ÄÚµÄÆğÊ¼OFDM·ûºÅÎ»ÖÃ (1-based)
+%   = 1 : ËùÓĞ OFDM ·ûºÅ¾ùÎª PDSCH (ÎŞ PDCCH, Ä¬ÈÏ)
+%   = 2 : µÚ1¸öOFDM·ûºÅÎªPDCCH, µÚ2~NdÎªPDSCH (µäĞÍ³¡¾°)
+%   = 3 : µÚ1~2¸öOFDM·ûºÅÎªPDCCH, µÚ3~NdÎªPDSCH
+%   ×¢Òâ: ĞèÈ·±£DMRS·ûºÅÎ»ÖÃÂäÔÚ PDSCH ·ûºÅ·¶Î§ÄÚ
+PDSCH_StartSymbol = 2;    % PDSCHÆğÊ¼OFDM·ûºÅÎ»ÖÃ (1-based)
+CFI = PDSCH_StartSymbol - 1;  % ÓÉPDSCH_StartSymbol×Ô¶¯¼ÆËã: ¿ØÖÆÇøÓòÕ¼ÓÃµÄOFDM·ûºÅÊı
+
 %% ---------- ÆäËû ----------
 SNR_dB_est   = 25;   % ¹À¼ÆSNR (dB), ÓÃÓÚLMMSEĞÅµÀ¹À¼Æ; Î´ÖªÊ±ÉèÎªºÏÀíÖµ
 alphaForPDPCE = 1;   % expPDPË¥¼õÒò×Ó (½¼Çø0.1~0.5, ³ÇÇø1~2)
 FreqOffset_Hz = 0;    % ×Ô¶¯´ÓVSAÎÄ¼ş¶ÁÈ¡, ´Ë´¦Îªºó±¸Ä¬ÈÏÖµ
-CFI          = 0;     % ¿ØÖÆĞÅµÀ·ûºÅÊı(NRÏÂ=0)
 Ns_max       = 1;     % ×î´óÁ÷Êı
 Ns_rank      = 1;     % Á÷Êırank
 Matrix_StaticBF_Mode = 2;  % ¾²Ì¬BFÄ£Ê½
@@ -68,6 +76,9 @@ RetransmissionIsBind = 1;  % ÖØ´«°ó¶¨
 TDD_Config    = 1;         % TDDÅäÖÃ (½öÍ³¼ÆÓÃ)
 SRS_periodic  = 10;        % SRSÖÜÆÚ (NR²»ÓÃ)
 NRB_forEBB    = NumOfRB;   % ²¨Êø¸³ĞÎRB×é´óĞ¡
+
+%% ---------- ¿ÉÊÓ»¯ ----------
+PlotConstellation = true;   % true=»æÖÆ¾ùºâºóÊı¾İĞÇ×ùÍ¼; false=²»»æÖÆ
 
 %% ---------- Êä³öÂ·¾¶ ----------
 ResultSaveFile = fullfile(config_dir, 'results', 'Rx_Standalone_Result.mat');

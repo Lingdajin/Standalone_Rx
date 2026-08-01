@@ -38,7 +38,7 @@ if Nr ~= Nr_file
 end
 Nr = Nr_file;
 % FreqOffset_Hz 从VSA文件自动读取 (覆盖配置文件中的值)
-FreqOffset_Hz = centerFreq / 2 * 1e3;   % 载波频偏补偿
+FreqOffset_Hz = 0;   % 载波频偏补偿
 fprintf('VSA centerFreq=%.3fGHz  FreqOffset=%.1fHz\n', centerFreq/1e9, FreqOffset_Hz);
 fprintf('Fs=%.2fMHz 天线=%d 长=%d样点(%.2fms)\n', ...
     Fs_val/1e6, Nr, size(sig_rx_all, 2), size(sig_rx_all, 2)/Fs_val*1e3);
@@ -253,32 +253,55 @@ for frame_idx = 1:NumFrames
         DecodedResults(result_index).decoded_cb_bits = ...
             LDPCCodingRateMatchingParam.last_decoded_cb_bits;
 
-        % % ==== 星座图诊断 (仅第一个时隙) ====
-        % global Debug_Data_after_Equ Debug_SNR_after_Equ
-        % if frame_idx == 1 && slot_idx == 1
-        %     deq = Debug_Data_after_Equ;
-        %     fprintf('[星座诊断] Data_after_Equ: %dx%d, range real=[%.3f,%.3f] imag=[%.3f,%.3f]\n', ...
-        %         size(deq,1), size(deq,2), min(real(deq(:))), max(real(deq(:))), ...
-        %         min(imag(deq(:))), max(imag(deq(:))));
-        %     fprintf('[星座诊断] SNR_after_Equ: mean=%.2f min=%.2f max=%.2f\n', ...
-        %         mean(Debug_SNR_after_Equ(:)), min(Debug_SNR_after_Equ(:)), max(Debug_SNR_after_Equ(:)));
-        %     % 绘制前2000个符号的星座图
-        %     Nplot = min(2000, numel(deq));
-        %     figure(100); clf;
-        %     plot(real(deq(1:Nplot)), imag(deq(1:Nplot)), 'b.');
-        %     grid on; axis equal;
-        %     xlabel('Real'); ylabel('Imag');
-        %     title(sprintf('Constellation (first %d of %d symbols), SNR=%.0fdB', Nplot, numel(deq), SNR_dB_est));
-        %     % 叠加理想16QAM参考点
-        %     hold on;
-        %     D = 1/sqrt(10);
-        %     ref_pts = [-3 -1 1 3] * D;
-        %     [X,Y] = meshgrid(ref_pts, ref_pts);
-        %     plot(X(:), Y(:), 'rx', 'MarkerSize', 10, 'LineWidth', 2);
-        %     legend('Rx symbols', 'Ideal 16QAM');
-        %     hold off;
-        %     drawnow;
-        % end
+        % ==== 均衡后星座图可视化 ====
+        if PlotConstellation
+            global Debug_Data_after_Equ Debug_SNR_after_Equ
+            deq = Debug_Data_after_Equ;
+            if ~isempty(deq)
+                Nplot = min(2000, numel(deq));
+                syms = deq(1:Nplot);
+                
+                figure(100); clf;
+                plot(real(syms(:)), imag(syms(:)), 'b.', 'MarkerSize', 4);
+                grid on; axis equal; hold on;
+                xlabel('In-Phase'); ylabel('Quadrature');
+                
+                % 根据调制阶数绘制理想星座参考点
+                Qm = 2^mod_mode(1);  % 调制阶数: 4=QPSK,16=16QAM,64=64QAM,256=256QAM
+                switch Qm
+                    case 4  % QPSK
+                        ref = [1+1j, 1-1j, -1+1j, -1-1j] / sqrt(2);
+                    case 16  % 16QAM
+                        D = 1/sqrt(10);
+                        ref_vals = [-3, -1, 1, 3] * D;
+                        [X, Y] = meshgrid(ref_vals, ref_vals);
+                        ref = X(:) + 1j*Y(:);
+                    case 64  % 64QAM
+                        D = 1/sqrt(42);
+                        ref_vals = [-7, -5, -3, -1, 1, 3, 5, 7] * D;
+                        [X, Y] = meshgrid(ref_vals, ref_vals);
+                        ref = X(:) + 1j*Y(:);
+                    case 256  % 256QAM
+                        D = 1/sqrt(170);
+                        ref_vals = [-15,-13,-11,-9,-7,-5,-3,-1,1,3,5,7,9,11,13,15] * D;
+                        [X, Y] = meshgrid(ref_vals, ref_vals);
+                        ref = X(:) + 1j*Y(:);
+                    otherwise
+                        ref = [];
+                end
+                if ~isempty(ref)
+                    plot(real(ref), imag(ref), 'rx', 'MarkerSize', 8, 'LineWidth', 1.5);
+                    legend('Rx Symbols', 'Ideal Ref', 'Location', 'best');
+                end
+                
+                % 标题信息
+                snr_mean = mean(Debug_SNR_after_Equ(:), 'omitnan');
+                title(sprintf(['Constellation (Post-EQ) — Frame %d Slot %d | ' ...
+                    'MCS=%d %dQAM | Syms=%d/%d | SNR_{EQ}=%.1fdB'], ...
+                    frame_idx, slot_idx, MCS, Qm, Nplot, numel(deq), snr_mean));
+                hold off; drawnow;
+            end
+        end
 
         % if mod(slot_idx, 5) == 1
         %     bler = sum(SNRLoopStatistic.BLER_e_f) / max(sum(SNRLoopStatistic.BLER_t_f), 1);
