@@ -38,6 +38,7 @@ if Nr ~= Nr_file
 end
 Nr = Nr_file;
 % FreqOffset_Hz 从VSA文件自动读取 (覆盖配置文件中的值)
+CarrierFrequency_Hz = centerFreq;
 FreqOffset_Hz = 0;   % 载波频偏补偿
 fprintf('VSA centerFreq=%.3fGHz  FreqOffset=%.1fHz\n', centerFreq/1e9, FreqOffset_Hz);
 fprintf('Fs=%.2fMHz 天线=%d 长=%d样点(%.2fms)\n', ...
@@ -135,6 +136,9 @@ for frame_idx = 1:NumFrames
     for slot_idx = 1:N_slots_frame
         if ~DL_Slot_Mask(slot_idx), continue; end
         n_s_f = slot_idx - 1; SystemParam.n_s_f = n_s_f;
+        SystemParam.PhaseComp_vec = nr_symbol_phase_compensation( ...
+            SystemParam.CarrierFrequency_Hz, SystemParam.SampleFreq, ...
+            FFT_size, cp_vec, n_s_f);
 
         % 提取时隙
         s0 = f0 + (slot_idx-1) * samples_per_slot;

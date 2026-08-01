@@ -90,15 +90,9 @@ if N_align > 0
 end
 
 % 相位补偿
-if ~exist('FreqOffset_Hz','var'), FreqOffset_Hz = 0; end
-if FreqOffset_Hz ~= 0
-    cum_before = [0, cumsum(FFT_size + LengthOfGI_vec(1:end-1))];
-    useful_start = cum_before + LengthOfGI_vec;
-    Fs = FFT_size * 15e3 * 2^miu;
-    PhaseComp_vec = exp(1j * 2 * pi * FreqOffset_Hz * useful_start / Fs);
-else
-    PhaseComp_vec = ones(1, Nd);
-end
+if ~exist('CarrierFrequency_Hz', 'var'), CarrierFrequency_Hz = 0; end
+PhaseComp_vec = nr_symbol_phase_compensation( ...
+    CarrierFrequency_Hz, SampleFreq, FFT_size, LengthOfGI_vec, 0);
 
 % 与发射端 PDSCH_SystemParamInit 保持同一载波栅格原点。Nc 表示该带宽/
 % SCS 下的完整载波栅格宽度，NumOfRB 只占用从栅格起点开始的 Nc_used 个RE。
@@ -117,6 +111,7 @@ SystemParam.Nd_data     = Nd - CFI;
 SystemParam.LengthOfGI  = LengthOfGI;
 SystemParam.LengthOfGI_vec = LengthOfGI_vec;
 SystemParam.PhaseComp_vec  = PhaseComp_vec;
+SystemParam.CarrierFrequency_Hz = CarrierFrequency_Hz;
 SystemParam.SamplesPerOFDM = SamplesPerOFDM;
 SystemParam.SampleFreq  = SampleFreq;
 SystemParam.dt          = dt;
