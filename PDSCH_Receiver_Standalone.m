@@ -14,7 +14,8 @@ Sim_Add_Path_Minimal; rng(5); warning off;
 %% ==================== 加载配置 ====================
 fprintf('===== PDSCH 独立接收机 =====\n');
 cfg_dir = project_root;
-run(fullfile(cfg_dir, 'PDSCH_Receiver_Standalone_Config'));
+run(fullfile(cfg_dir, 'PDSCH_Receiver_Standalone_Config.m'));
+%run(fullfile(cfg_dir, 'PDSCH_Receiver_Standalone_Config_1ANT.m'));
 
 if ~isnumeric(C_cut) || ~isscalar(C_cut) || ~isfinite(C_cut) || ...
         C_cut < 0 || C_cut ~= floor(C_cut)
