@@ -84,7 +84,15 @@ for loop_Ns = 1:Ns
     end
     
     % --- 7. ¼ÓÈÅ ---
-    scramblingbits = scrambling(TB_rmbits);
+    if isfield(LDPCParam, 'decoder_cfg') && ~isempty(LDPCParam.decoder_cfg)
+        RNTI = LDPCParam.decoder_cfg.RNTI(1);
+        nID  = LDPCParam.decoder_cfg.nID(1);
+        q_scramble = LDPCParam.decoder_cfg.q(1);
+    else
+        % fallback defaults matching PDSCH_LDPC_Config
+        RNTI = 1;  nID = 10;  q_scramble = 0;
+    end
+    scramblingbits = scrambling(TB_rmbits, RNTI, nID, q_scramble);
     
     % --- 8. µ÷ÖÆ ---
     Data_Mod_temp = modulation36211(scramblingbits, 2^mod_mode(loop_Ns));
