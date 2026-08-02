@@ -14,6 +14,7 @@ testFiles = {
     fullfile(projectRoot, 'test', 'test_cp_frequency_offset_estimate.m')
     fullfile(projectRoot, 'test', 'test_cp_timing_metric.m')
     fullfile(projectRoot, 'test', 'test_load_standalone_vsa.m')
+    fullfile(projectRoot, 'test', 'test_high_order_qam_mapping.m')
     fullfile(projectRoot, 'test', 'test_nr_dmrs_fd_occ_despread.m')
     fullfile(projectRoot, 'test', 'test_usable_frame_offsets.m')
     };

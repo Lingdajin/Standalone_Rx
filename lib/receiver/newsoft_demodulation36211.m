@@ -55,32 +55,32 @@ switch (mod_mode)
     case 256 %% 256QAM
         D=1/sqrt(170);
         demod_bits=zeros(8,L);
-        demod_bits(1,:) = -demod_soft(1,:)*4*D.*rou;
-        demod_bits(2,:) = (abs(demod_soft(1,:))-8*D)*4*D.*rou;
-        demod_bits(3,:) = (-4*D+abs(abs(demod_soft(1,:))-8*D))*4*D.*rou;
-        demod_bits(4,:) = (-2*D+abs(abs(abs(demod_soft(1,:))-8*D)-4*D))*4*D.*rou;
-        demod_bits(5,:) = -demod_soft(2,:)*4*D.*rou;
-        demod_bits(6,:) = (abs(demod_soft(2,:))-8*D)*4*D.*rou;
-        demod_bits(7,:) = (-4*D+abs(abs(demod_soft(2,:))-8*D))*4*D.*rou;
-        demod_bits(8,:) = (-2*D+abs(abs(abs(demod_soft(2,:))-8*D)-4*D))*4*D.*rou;
+        % TS 38.211 maps the bit labels in I/Q-interleaved order:
+        % b0,b2,b4,b6 select I and b1,b3,b5,b7 select Q.
+        demod_bits(1,:) = demod_soft(1,:)*4*D.*rou;
+        demod_bits(2,:) = demod_soft(2,:)*4*D.*rou;
+        demod_bits(3,:) = (8*D-abs(demod_soft(1,:)))*4*D.*rou;
+        demod_bits(4,:) = (8*D-abs(demod_soft(2,:)))*4*D.*rou;
+        demod_bits(5,:) = (4*D-abs(abs(demod_soft(1,:))-8*D))*4*D.*rou;
+        demod_bits(6,:) = (4*D-abs(abs(demod_soft(2,:))-8*D))*4*D.*rou;
+        demod_bits(7,:) = (2*D-abs(abs(abs(demod_soft(1,:))-8*D)-4*D))*4*D.*rou;
+        demod_bits(8,:) = (2*D-abs(abs(abs(demod_soft(2,:))-8*D)-4*D))*4*D.*rou;
         demod_out = reshape(demod_bits,1,[]);
     case 1024 %% 1024QAM
         D=1/sqrt(682);
         demod_bits=zeros(10,L);
-        %% I-part: 5 bits
-        demod_bits(1,:) = -demod_soft(1,:)*4*D.*rou;
-        demod_bits(2,:) = (abs(demod_soft(1,:))-16*D)*4*D.*rou;
-        demod_bits(3,:) = (-8*D+abs(abs(demod_soft(1,:))-16*D))*4*D.*rou;
-        demod_bits(4,:) = (-4*D+abs(abs(abs(demod_soft(1,:))-16*D)-8*D))*4*D.*rou;
-        demod_bits(5,:) = (-2*D+abs(abs(abs(abs(demod_soft(1,:))-16*D)-8*D)-4*D))*4*D.*rou;
-        %% Q-part: 5 bits
-        demod_bits(6,:) = -demod_soft(2,:)*4*D.*rou;
-        demod_bits(7,:) = (abs(demod_soft(2,:))-16*D)*4*D.*rou;
-        demod_bits(8,:) = (-8*D+abs(abs(demod_soft(2,:))-16*D))*4*D.*rou;
-        demod_bits(9,:) = (-4*D+abs(abs(abs(demod_soft(2,:))-16*D)-8*D))*4*D.*rou;
-        demod_bits(10,:) = (-2*D+abs(abs(abs(abs(demod_soft(2,:))-16*D)-8*D)-4*D))*4*D.*rou;
+        % Keep the same I/Q-interleaved labeling for 1024QAM.
+        demod_bits(1,:) = demod_soft(1,:)*4*D.*rou;
+        demod_bits(2,:) = demod_soft(2,:)*4*D.*rou;
+        demod_bits(3,:) = (16*D-abs(demod_soft(1,:)))*4*D.*rou;
+        demod_bits(4,:) = (16*D-abs(demod_soft(2,:)))*4*D.*rou;
+        demod_bits(5,:) = (8*D-abs(abs(demod_soft(1,:))-16*D))*4*D.*rou;
+        demod_bits(6,:) = (8*D-abs(abs(demod_soft(2,:))-16*D))*4*D.*rou;
+        demod_bits(7,:) = (4*D-abs(abs(abs(demod_soft(1,:))-16*D)-8*D))*4*D.*rou;
+        demod_bits(8,:) = (4*D-abs(abs(abs(demod_soft(2,:))-16*D)-8*D))*4*D.*rou;
+        demod_bits(9,:) = (2*D-abs(abs(abs(abs(demod_soft(1,:))-16*D)-8*D)-4*D))*4*D.*rou;
+        demod_bits(10,:) = (2*D-abs(abs(abs(abs(demod_soft(2,:))-16*D)-8*D)-4*D))*4*D.*rou;
         demod_out = reshape(demod_bits,1,[]);
     otherwise
         disp('Error! Please input again');        
 end
-

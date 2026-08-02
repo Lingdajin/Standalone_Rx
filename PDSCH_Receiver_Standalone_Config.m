@@ -37,7 +37,7 @@ CE_Mode_CRS   = 0;    % (NR²»ÓÃ)
 CE_Mode_CSIRS = 0;    % (NR²»ÓÃ)
 
 %% ---------- MCS / ´«Êä¿éÅäÖÃ (ÐèÓë·¢Éä¶ËÒ»ÖÂ) ----------
-MCS_TABLE_PDSCH = 1;   % 1=Table1(64QAM), 2=Table2(256QAM), 3=Table3(64QAM-lowSE)
+MCS_TABLE_PDSCH = 2;   % 1=Table1(64QAM), 2=Table2(256QAM), 3=Table3(64QAM-lowSE)
 MCS             = 20;   % MCSË÷Òý (¶ÔÓ¦µ÷ÖÆ½×ÊýºÍÂëÂÊ)
 % ÒÔÏÂÓÉTBS_calculation_f30×Ô¶¯¼ÆËã:
 % src_len, modulation_mode, Rc
@@ -53,7 +53,7 @@ NumFrames        = 0;       % ÎÞÏßÖ¡Êý: 0=×Ô¶¯¼ì²âVSAÖÐËùÓÐÍêÕûÖ¡; >0=×î¶à´¦ÀíNÖ
 % miu=0: 10Ê±Ï¶/Ö¡, miu=1: 20Ê±Ï¶/Ö¡, miu=2: 40Ê±Ï¶/Ö¡
 % Àý: miu=1,20Ê±Ï¶, pattern [3:18]=1 ±íÊ¾Ê±Ï¶3~18ÎªPDSCH
 N_slots_frame = 10 * 2^miu;
-DL_Slot_Mask = [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];  % 1=PDSCH(DL), 0=UL/GP
+DL_Slot_Mask = [0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1];  % 1=PDSCH(DL), 0=UL/GP
 
 %% ---------- PDSCH OFDM·ûºÅÅäÖÃ ----------
 % PDSCH_StartSymbol: PDSCHÔÚÃ¿Ê±Ï¶ÄÚµÄÆðÊ¼OFDM·ûºÅÎ»ÖÃ (1-based)
@@ -61,11 +61,11 @@ DL_Slot_Mask = [0,0,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];  % 1=PDSCH(DL), 0=UL/G
 %   = 2 : µÚ1¸öOFDM·ûºÅÎªPDCCH, µÚ2~NdÎªPDSCH (µäÐÍ³¡¾°)
 %   = 3 : µÚ1~2¸öOFDM·ûºÅÎªPDCCH, µÚ3~NdÎªPDSCH
 %   ×¢Òâ: ÐèÈ·±£DMRS·ûºÅÎ»ÖÃÂäÔÚ PDSCH ·ûºÅ·¶Î§ÄÚ
-PDSCH_StartSymbol = 2;    % PDSCHÆðÊ¼OFDM·ûºÅÎ»ÖÃ (1-based)
+PDSCH_StartSymbol = 1;    % PDSCHÆðÊ¼OFDM·ûºÅÎ»ÖÃ (1-based)
 CFI = PDSCH_StartSymbol - 1;  % ÓÉPDSCH_StartSymbol×Ô¶¯¼ÆËã: ¿ØÖÆÇøÓòÕ¼ÓÃµÄOFDM·ûºÅÊý
 
 %% ---------- ÆäËû ----------
-SNR_dB_est   = 25;   % ¹À¼ÆSNR (dB), ÓÃÓÚLMMSEÐÅµÀ¹À¼Æ; Î´ÖªÊ±ÉèÎªºÏÀíÖµ
+SNR_dB_est   = 40;   % ¹À¼ÆSNR (dB), ÓÃÓÚLMMSEÐÅµÀ¹À¼Æ; Î´ÖªÊ±ÉèÎªºÏÀíÖµ
 alphaForPDPCE = 1;   % expPDPË¥¼õÒò×Ó (½¼Çø0.1~0.5, ³ÇÇø1~2)
 FreqOffset_Hz = 0;    % ×Ô¶¯´ÓVSAÎÄ¼þ¶ÁÈ¡, ´Ë´¦Îªºó±¸Ä¬ÈÏÖµ
 Ns_max       = 1;     % ×î´óÁ÷Êý
