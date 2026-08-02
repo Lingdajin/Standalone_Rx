@@ -1,4 +1,4 @@
-function PilotParam = PDSCH_PilotParamInit(TM,CFI,Nc_used_CRS,Nc_used_DMRS,Nc_used_CSIRS,Nc_used,FFT_size,Nc,CSIRS_position_config,CPType,NumOfAddDMRS,Nd,Nd_data,DMRS_port,DMRSLength,DMRS_Type,DMRS_ScramblingID0,DMRS_ScramblingID1,DMRS_nSCID,dmrs_TypeA_Position,n_s_f)
+function PilotParam = PDSCH_PilotParamInit(TM,CFI,Nc_used_CRS,Nc_used_DMRS,Nc_used_CSIRS,Nc_used,FFT_size,Nc,CSIRS_position_config,CPType,NumOfAddDMRS,Nd,Nd_data,DMRS_port,DMRSLength,DMRS_Type,DMRS_ScramblingID0,DMRS_ScramblingID1,DMRS_nSCID,dmrs_TypeA_Position,n_s_f,varargin)
                                
 %% CRS generation (port0~port3)
 % CRS signal
@@ -288,7 +288,20 @@ switch TM
         CSIRS_position = [];
 end
 %% structure "PilotParam" generation
-DATA_COLUMN_INDEX = [CFI+1:Nd];
+if isempty(varargin)
+    pdschNumSymbols = Nd - CFI;
+else
+    pdschNumSymbols = varargin{1};
+end
+DATA_COLUMN_INDEX = CFI + (1:pdschNumSymbols);
+if isempty(DATA_COLUMN_INDEX) || DATA_COLUMN_INDEX(end) > Nd
+    error('PDSCH_PilotParamInit:InvalidSymbolAllocation', ...
+        'PDSCH symbol allocation exceeds the slot.');
+end
+if strcmp(TM, 'NR') && any(~ismember(DMRS_COLUMN_INDEX(1,:), DATA_COLUMN_INDEX))
+    error('PDSCH_PilotParamInit:DmrsOutsidePdsch', ...
+        'At least one DMRS symbol is outside the configured PDSCH allocation.');
+end
 PilotParam = struct(...
     'CRS_Signal',CRS_Signal,...
     'CRS_position',CRS_position,...

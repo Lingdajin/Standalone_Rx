@@ -21,6 +21,59 @@ if ~isnumeric(C_cut) || ~isscalar(C_cut) || ~isfinite(C_cut) || ...
     error('C_cut必须是非负整数；设置为0代表译码全部CB。');
 end
 
+% Normalize the optional multi-profile configuration. SlotIndices use NR
+% zero-based numbering; SlotProfileIndex uses MATLAB one-based indexing.
+ldpc_defaults = PDSCH_LDPC_Config();
+profile_defaults = struct( ...
+    'NumOfRB', NumOfRB, ...
+    'MCS_TABLE_PDSCH', MCS_TABLE_PDSCH, ...
+    'MCS', MCS, ...
+    'PDSCH_StartSymbol', PDSCH_StartSymbol, ...
+    'NumOfAddDMRS', NumOfAddDMRS, ...
+    'DMRSLength', DMRSLength, ...
+    'DMRS_Type', DMRS_Type, ...
+    'DMRS_port', DMRS_port, ...
+    'DMRS_ScramblingID0', DMRS_ScramblingID0, ...
+    'DMRS_ScramblingID1', DMRS_ScramblingID1, ...
+    'DMRS_nSCID', DMRS_nSCID, ...
+    'dmrs_TypeA_Position', dmrs_TypeA_Position, ...
+    'RNTI', ldpc_defaults.RNTI, ...
+    'nID', ldpc_defaults.nID, ...
+    'q', ldpc_defaults.q, ...
+    'RV', 0, ...
+    'MaxLDPCIterations', ldpc_defaults.max_iterations, ...
+    'UseCppLDPCDecoder', ldpc_defaults.LDPC_decoder_cpp_alter, ...
+    'DL_Slot_Mask', DL_Slot_Mask);
+if ~exist('PDSCH_Profiles', 'var')
+    PDSCH_Profiles = struct([]);
+end
+if CPType == 1
+    symbols_per_slot_cfg = 14;
+else
+    symbols_per_slot_cfg = 12;
+end
+[PDSCH_Profiles, SlotProfileIndex, DL_Slot_Mask] = ...
+    PDSCH_NormalizeProfiles(PDSCH_Profiles, profile_defaults, ...
+    N_slots_frame, symbols_per_slot_cfg);
+
+first_dl_slot = find(DL_Slot_Mask, 1, 'first');
+sync_profile_index = SlotProfileIndex(first_dl_slot);
+sync_profile = PDSCH_Profiles(sync_profile_index);
+NumOfRB = sync_profile.NumOfRB;
+MCS_TABLE_PDSCH = sync_profile.MCS_TABLE_PDSCH;
+MCS = sync_profile.MCS;
+PDSCH_StartSymbol = sync_profile.PDSCH_StartSymbol;
+PDSCH_NumSymbols = sync_profile.PDSCH_NumSymbols;
+CFI = PDSCH_StartSymbol - 1;
+DMRS_port = sync_profile.DMRS_port;
+NumOfAddDMRS = sync_profile.NumOfAddDMRS;
+DMRSLength = sync_profile.DMRSLength;
+DMRS_Type = sync_profile.DMRS_Type;
+DMRS_ScramblingID0 = sync_profile.DMRS_ScramblingID0;
+DMRS_ScramblingID1 = sync_profile.DMRS_ScramblingID1;
+DMRS_nSCID = sync_profile.DMRS_nSCID;
+dmrs_TypeA_Position = sync_profile.dmrs_TypeA_Position;
+
 if ~isfile(VSA_File)
     error(['找不到VSA输入文件: %s\n' ...
         '请把采集文件放入 input 目录、修改配置文件，或设置环境变量 PDSCH_VSA_FILE。'], ...
@@ -29,6 +82,18 @@ end
 
 fprintf('VSA: %s  BW=%dM RB=%d miu=%d DMRSport=%d MCS=%d\n', ...
     VSA_File, round(BW/1e6), NumOfRB, miu, DMRS_port, MCS);
+fprintf('PDSCH profiles: %d\n', numel(PDSCH_Profiles));
+for profile_index = 1:numel(PDSCH_Profiles)
+    profile = PDSCH_Profiles(profile_index);
+    fprintf(['  [%d] %s slots=[%s] RB=%d:%d symbols=%d:%d ' ...
+        'MCS-table=%d MCS=%d DMRS-port=%d RNTI=%d nID=%d q=%d RV=%d\n'], ...
+        profile_index, profile.Name, num2str(profile.SlotIndices), ...
+        profile.RBStart, profile.RBStart + profile.NumOfRB - 1, ...
+        profile.PDSCH_StartSymbol, ...
+        profile.PDSCH_StartSymbol + profile.PDSCH_NumSymbols - 1, ...
+        profile.MCS_TABLE_PDSCH, profile.MCS, profile.DMRS_port, ...
+        profile.RNTI, profile.nID, profile.q, profile.RV);
+end
 
 %% ==================== 加载VSA信号与元数据 ====================
 fprintf('加载VSA信号数据...\n');
@@ -45,12 +110,13 @@ fprintf('Fs=%.2fMHz 天线=%d 长=%d样点(%.2fms)\n', ...
     Fs_val/1e6, Nr, size(sig_rx_all, 2), size(sig_rx_all, 2)/Fs_val*1e3);
 
 %% ==================== 初始化全局 ====================
+global SystemParam
 run(fullfile(cfg_dir, 'PDSCH_Init_Standalone'));
+SystemParam = PDSCH_ApplyProfile(sync_profile, SystemParam);
 
 %% ==================== 采样率检测与重采样 ====================
 % 接收机设计采样率: FFT_size * SCS = FFT_size * 15e3 * 2^miu
 % VSA 实际采样率可能与此不一致, 需要重采样到期望采样率
-global SystemParam
 Fs_expected = SystemParam.SampleFreq;   % FFT_size * 15e3 * 2^miu
 if abs(Fs_val - Fs_expected) / Fs_expected > 1e-6
     fprintf('? VSA采样率(%.4f MHz)与接收机期望采样率(%.4f MHz)不一致，执行重采样...\n', ...
@@ -123,18 +189,45 @@ HARQParam.MaxTranx = 1; HARQParam.rv_idx_seq = 0;
 HARQParam.ACK_adjust = 0; HARQParam.Adjust_dB = 0;
 
 DecodedResults = struct('frame_index', {}, 'frame_start_offset', {}, ...
-    'slot_index', {}, ...
+    'slot_index', {}, 'nr_slot_index', {}, ...
+    'profile_index', {}, 'profile_name', {}, ...
     'total_cb_count', {}, 'decoded_cb_count', {}, 'decoded_cb_mask', {}, ...
     'tb_crc_ok', {}, 'cb_crc_ok', {}, 'decoded_bits', {}, ...
     'decoded_cb_bits', {});
 partial_decode_used = false;
+total_source_bits = 0;
 
 %% ==================== 帧/时隙循环 ====================
 snr_N = 1;  % 仅一个SNR点
 for frame_idx = 1:NumFrames
     f0 = frame_start_offsets(frame_idx) + 1;
     for slot_idx = 1:N_slots_frame
-        if ~DL_Slot_Mask(slot_idx), continue; end
+        profile_index = SlotProfileIndex(slot_idx);
+        if profile_index == 0, continue; end
+        profile = PDSCH_Profiles(profile_index);
+        SystemParam = PDSCH_ApplyProfile(profile, SystemParam);
+
+        NumOfRB = profile.NumOfRB;
+        MCS_TABLE_PDSCH = profile.MCS_TABLE_PDSCH;
+        MCS = profile.MCS;
+        PDSCH_StartSymbol = profile.PDSCH_StartSymbol;
+        PDSCH_NumSymbols = profile.PDSCH_NumSymbols;
+        CFI = PDSCH_StartSymbol - 1;
+        DMRS_port = profile.DMRS_port;
+        NumOfAddDMRS = profile.NumOfAddDMRS;
+        DMRSLength = profile.DMRSLength;
+        DMRS_Type = profile.DMRS_Type;
+        DMRS_ScramblingID0 = profile.DMRS_ScramblingID0;
+        DMRS_ScramblingID1 = profile.DMRS_ScramblingID1;
+        DMRS_nSCID = profile.DMRS_nSCID;
+        dmrs_TypeA_Position = profile.dmrs_TypeA_Position;
+
+        global N_Matraix SC_perM DMRS_perM MatrixParam
+        N_Matraix = 1;
+        SC_perM = SystemParam.Nc_used;
+        DMRS_perM = SystemParam.Nc_used / 2;
+        MatrixParam.Matrix_W = eye(DMRS_port);
+
         n_s_f = slot_idx - 1; SystemParam.n_s_f = n_s_f;
         SystemParam.PhaseComp_vec = nr_symbol_phase_compensation( ...
             SystemParam.CarrierFrequency_Hz, SystemParam.SampleFreq, ...
@@ -151,7 +244,9 @@ for frame_idx = 1:NumFrames
             FFT_size, SystemParam.Nc, 0, CPType, NumOfAddDMRS, ...
             Nd, Nd-CFI, DMRS_port, DMRSLength, DMRS_Type, ...
             DMRS_ScramblingID0, DMRS_ScramblingID1, DMRS_nSCID, ...
-            dmrs_TypeA_Position, n_s_f);
+            dmrs_TypeA_Position, n_s_f, PDSCH_NumSymbols);
+        PilotParam = PDSCH_ShiftPilotFrequency(PilotParam, ...
+            profile.RBStart, SystemParam.Nc_RB);
         PilotParam.CSIRS_COLUMN_INDEX = []; PilotParam.CSIRS_position = [];
 
         DataPilotIndexParam = PDSCH_DataPilotIndexParamInit(...
@@ -159,18 +254,25 @@ for frame_idx = 1:NumFrames
             0, DMRS_port, 0, ...
             PilotParam.CRS_position, PilotParam.DMRS_position, ...
             PilotParam.CSIRS_position, PilotParam.CRS_COLUMN_INDEX, ...
-            PilotParam.DMRS_COLUMN_INDEX, PilotParam.CSIRS_COLUMN_INDEX);
+            PilotParam.DMRS_COLUMN_INDEX, PilotParam.CSIRS_COLUMN_INDEX, ...
+            PDSCH_NumSymbols);
 
         
         DMRS_Idx = DataPilotIndexParam.DMRS_Index;
         [src_len, mod_mode, Rc] = TBS_calculation_f30(...
             MCS_TABLE_PDSCH, NumOfRB, DMRS_port, MCS, ...
-            numel(DMRS_Idx)/NumOfRB, Nd-CFI, 0);
+            numel(DMRS_Idx)/NumOfRB, PDSCH_NumSymbols, 0);
         G = length(DataPilotIndexParam.Data_Index_DataRegion) * mod_mode .* DMRS_port;
         LDPCCodingRateMatchingParam.src_len = src_len;
         LDPCCodingRateMatchingParam.modulation_mode = mod_mode;
         LDPCCodingRateMatchingParam.G = G;
         LDPCCodingRateMatchingParam.Rc = src_len / G;
+        LDPCCodingRateMatchingParam.decoder_settings = struct( ...
+            'RNTI', profile.RNTI, 'nID', profile.nID, 'q', profile.q, ...
+            'max_iterations', profile.MaxLDPCIterations, ...
+            'LDPC_decoder_cpp_alter', profile.UseCppLDPCDecoder);
+        LDPCCodingRateMatchingParam.decoder_cfg = [];
+        HARQParam.rv_idx_seq = profile.RV;
 
         % 计算码块分割参数 (C_save等, 解码必需)
         dummy_bits = zeros(1, src_len(1));
@@ -210,7 +312,8 @@ for frame_idx = 1:NumFrames
         for r = 1:C_val
             Er = E_vec(r);
             [~, rm_pos_tmp] = LDPC_ratematch(CBS_val, zeros(1, CBcoded_len), ...
-                SimParam_val.BGtype, z, 1, Er, 0, SimParam_val.l_padding);
+                SimParam_val.BGtype, z, 1, Er, profile.RV, ...
+                SimParam_val.l_padding);
             rm_pos_all = [rm_pos_all, rm_pos_tmp];
         end
         LDPCCodingRateMatchingParam.rm_pos_1 = rm_pos_all;
@@ -240,6 +343,9 @@ for frame_idx = 1:NumFrames
         DecodedResults(result_index).frame_start_offset = ...
             frame_start_offsets(frame_idx);
         DecodedResults(result_index).slot_index = slot_idx;
+        DecodedResults(result_index).nr_slot_index = n_s_f;
+        DecodedResults(result_index).profile_index = profile_index;
+        DecodedResults(result_index).profile_name = profile.Name;
         DecodedResults(result_index).total_cb_count = C_val;
         DecodedResults(result_index).decoded_cb_count = decoded_cb_count;
         DecodedResults(result_index).decoded_cb_mask = ...
@@ -256,6 +362,9 @@ for frame_idx = 1:NumFrames
             LDPCCodingRateMatchingParam.des_bits_all;
         DecodedResults(result_index).decoded_cb_bits = ...
             LDPCCodingRateMatchingParam.last_decoded_cb_bits;
+        if ~LDPCCodingRateMatchingParam.partial_cb_decode
+            total_source_bits = total_source_bits + sum(src_len);
+        end
 
         % ==== 均衡后星座图可视化 ====
         if PlotConstellation
@@ -334,7 +443,7 @@ else
     BLER_t = sum(SNRLoopStatistic.BLER_t_f);
     BLER_e = sum(SNRLoopStatistic.BLER_e_f);
     BER = sum(SNRLoopStatistic.BER_arr_Num) / ...
-        max(sum(SNRLoopStatistic.BLER_t_f .* src_len), 1);
+        max(total_source_bits, 1);
     BLER = BLER_e / max(BLER_t, 1);
     EVM = SNRLoopStatistic.EVM_sum / max(SNRLoopStatistic.EVM_count, 1);
     Metrics = struct('available', true, 'reason', '', ...
@@ -344,10 +453,45 @@ else
     fprintf('EVM_avg:%.2f%%\n', EVM * 100);
 end
 fprintf('DMRS_EVM:%.2f%%\n', DMRS_EVM * 100);
+
+ProfileMetrics = repmat(struct('profile_index', 0, 'profile_name', '', ...
+    'record_count', 0, 'crc_count', 0, 'error_count', 0, ...
+    'BLER', NaN, 'available', false), 1, numel(PDSCH_Profiles));
+for profile_index = 1:numel(PDSCH_Profiles)
+    record_mask = [DecodedResults.profile_index] == profile_index;
+    profile_results = DecodedResults(record_mask);
+    if isempty(profile_results)
+        crc_values = [];
+    else
+        crc_values = [profile_results.tb_crc_ok];
+    end
+    valid_crc = ~isnan(crc_values);
+    ProfileMetrics(profile_index).profile_index = profile_index;
+    ProfileMetrics(profile_index).profile_name = PDSCH_Profiles(profile_index).Name;
+    ProfileMetrics(profile_index).record_count = numel(profile_results);
+    ProfileMetrics(profile_index).crc_count = nnz(valid_crc);
+    ProfileMetrics(profile_index).error_count = ...
+        nnz(crc_values(valid_crc) == 0);
+    ProfileMetrics(profile_index).available = any(valid_crc);
+    if any(valid_crc)
+        ProfileMetrics(profile_index).BLER = ...
+            ProfileMetrics(profile_index).error_count / nnz(valid_crc);
+        fprintf('Profile %s: TB=%d error=%d BLER=%.4f\n', ...
+            ProfileMetrics(profile_index).profile_name, ...
+            ProfileMetrics(profile_index).crc_count, ...
+            ProfileMetrics(profile_index).error_count, ...
+            ProfileMetrics(profile_index).BLER);
+    else
+        fprintf('Profile %s: BLER unavailable\n', ...
+            ProfileMetrics(profile_index).profile_name);
+    end
+end
+
 result_dir = fileparts(ResultSaveFile);
 if ~isfolder(result_dir), mkdir(result_dir); end
 save(ResultSaveFile, 'DecodedResults', 'Metrics', 'BER', 'BLER', ...
     'BLER_t', 'BLER_e', 'EVM', 'DMRS_EVM', 'C_cut', ...
-    'SNR_dB_est', 'MCS', 'NumOfRB', 'DMRS_port', ...
+    'SNR_dB_est', 'MCS', 'NumOfRB', 'DMRS_port', 'PDSCH_Profiles', ...
+    'SlotProfileIndex', 'ProfileMetrics', ...
     'frame_start_offsets', 'NumFrames');
 fprintf('结果保存: %s\n', ResultSaveFile);

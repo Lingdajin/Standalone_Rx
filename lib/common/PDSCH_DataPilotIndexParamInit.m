@@ -1,4 +1,4 @@
-function DataPilotIndexParam = PDSCH_DataPilotIndexParamInit(CFI,FFT_size,Nd,Nc_Index,CRS_port,DMRS_port,CSIRS_port,CRS_position,DMRS_position,CSIRS_position,CRS_COLUMN_INDEX,DMRS_COLUMN_INDEX,CSIRS_COLUMN_INDEX)
+function DataPilotIndexParam = PDSCH_DataPilotIndexParamInit(CFI,FFT_size,Nd,Nc_Index,CRS_port,DMRS_port,CSIRS_port,CRS_position,DMRS_position,CSIRS_position,CRS_COLUMN_INDEX,DMRS_COLUMN_INDEX,CSIRS_COLUMN_INDEX,varargin)
 
 %% note
 % When link adaption is available, the reserverd REs for DMRS is variable
@@ -9,8 +9,19 @@ function DataPilotIndexParam = PDSCH_DataPilotIndexParamInit(CFI,FFT_size,Nd,Nc_
 %%
 global SystemParam
 TM = SystemParam.TM;
+if isempty(varargin)
+    pdschNumSymbols = Nd - CFI;
+else
+    pdschNumSymbols = varargin{1};
+end
+pdschColumns = CFI + (1:pdschNumSymbols);
+if isempty(pdschColumns) || pdschColumns(end) > Nd
+    error('PDSCH_DataPilotIndexParamInit:InvalidSymbolAllocation', ...
+        'PDSCH symbol allocation [%d,%d] exceeds a %d-symbol slot.', ...
+        CFI + 1, CFI + pdschNumSymbols, Nd);
+end
 FrameIndex = zeros(FFT_size,Nd);
-FrameIndex(Nc_Index,CFI+1:end) = 1;
+FrameIndex(Nc_Index,pdschColumns) = 1;
 % TS 38.214 §5.1.6.2: DMRS符号中未被DMRS占用的RE可承载PDSCH数据
 % 不再整列清零, 仅通过后续DMRS标记覆盖对应位置 (Data_Index = find(FrameIndex==1))
 % CRS resource allocation labelling
@@ -101,7 +112,7 @@ Data_Index = find(FrameIndex==1);
 CRS_Index = find(FrameIndex==2|FrameIndex==3|FrameIndex==4|FrameIndex==5);
 DMRS_Index = find(FrameIndex==6|FrameIndex==7);
 CSIRS_Index = find(FrameIndex==8|FrameIndex==9|FrameIndex==10|FrameIndex==11);
-FrameIndex_Data = FrameIndex(Nc_Index,CFI+1:end);
+FrameIndex_Data = FrameIndex(Nc_Index,pdschColumns);
 Data_Index_DataRegion = find(FrameIndex_Data==1);
 
 DataPilotIndexParam  = struct(...

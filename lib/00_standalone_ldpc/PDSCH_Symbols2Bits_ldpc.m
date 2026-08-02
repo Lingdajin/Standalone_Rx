@@ -8,6 +8,19 @@ needs_new_config = ~isfield(LDPCCodingRateMatchingParam, 'decoder_cfg') || ...
     isempty(LDPCCodingRateMatchingParam.decoder_cfg) || TransIndex(1) == 1;
 if needs_new_config
     ldpc_config = PDSCH_LDPC_Config();
+    if isfield(LDPCCodingRateMatchingParam, 'decoder_settings') && ...
+            ~isempty(LDPCCodingRateMatchingParam.decoder_settings)
+        settings = LDPCCodingRateMatchingParam.decoder_settings;
+        setting_names = fieldnames(settings);
+        for setting_index = 1:numel(setting_names)
+            setting_name = setting_names{setting_index};
+            if ~isfield(ldpc_config, setting_name)
+                error('PDSCH_Symbols2Bits_ldpc:UnknownDecoderSetting', ...
+                    'Unknown decoder setting %s.', setting_name);
+            end
+            ldpc_config.(setting_name) = settings.(setting_name);
+        end
+    end
     sim_param = LDPCCodingRateMatchingParam.SimParam_1;
     sim_param.iterationNumLDPC = ldpc_config.max_iterations;
     LDPCCodingRateMatchingParam.decoder_cfg = ldpc_decoder_config( ...
